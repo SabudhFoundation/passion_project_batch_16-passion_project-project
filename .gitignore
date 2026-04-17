@@ -214,4 +214,8 @@ Temporary Items/
 # If you want to ignore all hidden files except `.gitignore` itself:
 # .*/ 
 # !/.gitignore
-
+test.csv
+train.csv
+valid.csv
+real-vs-fake
+features
