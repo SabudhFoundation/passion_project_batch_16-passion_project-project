@@ -1,3 +1,0 @@
-# Abstract {.unnumbered}
-
-Type here the abstract of the project.
