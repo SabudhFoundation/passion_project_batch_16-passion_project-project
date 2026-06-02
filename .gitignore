@@ -75,7 +75,16 @@ Desktop.ini
 # ──────────────────────────────────────────────────────────────────────────────
 
 # Quarto render outputs (HTML, PDF, EPUB, etc.)
+src/char_ocr_labeling/char_crops/
+*final_dataset/
+*best_chars/
+*best_chars_inverted/
+src/char_ocr_labeling/tmp_grids/
+
+
 output/
+src/data/
+src/data/
 _output/
 book/
 _book/
@@ -215,3 +224,5 @@ Temporary Items/
 # .*/ 
 # !/.gitignore
 
+virtual_font/
+*:Zone.Identifier
