@@ -1,34 +1,12 @@
-"""
-STGNN encoder + swappable prediction head.
-
-This is the Phase 1 architecture (GAT -> GCN -> GRU -> LayerNorm -> head)
-re-expressed with dense adjacency instead of PyTorch Geometric.
-
-Why dense instead of PyG
-------------------------
-Two reasons, both deliberate:
-
-1. Portability. PyG's GATConv/GCNConv rely on scatter/gather ops that have no
-   TFLite Micro equivalent. Board item 2b wants TinyML. Dense matmul-based graph
-   ops are exportable; PyG's sparse ops are not. Writing it dense now means the
-   quantization work later is a conversion, not a rewrite.
-2. It runs anywhere. No torch-scatter / torch-sparse build wall for teammates.
-
-At 435 PeMS sensors a dense 435x435 adjacency is ~190K floats. Fine. If the
-sensor count grows past a few thousand, revisit.
-
-Heads
------
-  "fc"     -> Linear -> SiLU -> Dropout -> Linear   (Phase 1 STGAT+GCN winner)
-  "taylor" -> TaylorKAN                             (Phase 2 proposal)
-"""
+"""STGNN model: GAT -> GCN -> GRU -> LayerNorm -> head.
+Dense adjacency (no torch-geometric). Head is 'fc', 'taylor' or 'bspline'."""
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .bspline_kan import BSplineKAN
 from .taylor_kan import TaylorKAN
-
 
 class DenseGCN(nn.Module):
     """Graph convolution with a precomputed normalised adjacency."""
@@ -40,7 +18,6 @@ class DenseGCN(nn.Module):
     def forward(self, x, adj_norm):
         # x: (B, N, F_in), adj_norm: (N, N)
         return self.lin(torch.einsum("ij,bjf->bif", adj_norm, x))
-
 
 class DenseGAT(nn.Module):
     """Single-head graph attention, masked to the road-network adjacency."""
@@ -65,7 +42,6 @@ class DenseGAT(nn.Module):
         alpha = F.dropout(alpha, self.dropout, self.training)
         return torch.bmm(alpha, h)
 
-
 class STGNN(nn.Module):
     """GAT -> GCN -> GRU -> LayerNorm -> head."""
 
@@ -80,6 +56,8 @@ class STGNN(nn.Module):
         horizon: int = 5,
         head: str = "fc",
         taylor_order: int = 2,
+        grid_size: int = 8,
+        spline_order: int = 3,
         kan_hidden=(64,),
         fc_dropout: float = 0.1,
     ):
@@ -101,6 +79,9 @@ class STGNN(nn.Module):
 
         if head == "taylor":
             self.head = TaylorKAN([gru_hidden, *kan_hidden, horizon], order=taylor_order)
+        elif head == "bspline":
+            self.head = BSplineKAN([gru_hidden, *kan_hidden, horizon],
+                                   grid_size=grid_size, spline_order=spline_order)
         elif head == "fc":
             h = kan_hidden[0] if kan_hidden else gru_hidden
             self.head = nn.Sequential(
@@ -135,7 +116,6 @@ class STGNN(nn.Module):
 
     def head_params(self) -> int:
         return sum(p.numel() for p in self.head.parameters() if p.requires_grad)
-
 
 def normalise_adjacency(adj: torch.Tensor) -> torch.Tensor:
     """Symmetric normalisation with self-loops: D^-1/2 (A + I) D^-1/2."""
